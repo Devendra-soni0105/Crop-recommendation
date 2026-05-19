@@ -55,7 +55,7 @@ Stores:
 - **Next.js**
 - **React.js**
 - **Tailwind CSS**
-- ** JavaScript**
+- **JavaScript**
 
 ### Backend
 - **Next.js API Routes**
