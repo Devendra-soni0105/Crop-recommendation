@@ -1,4 +1,8 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../../lib/auth";
+import connectToDatabase from "../../../lib/mongodb";
+import User from "../../../models/User";
 
 export async function POST(req) {
   try {
@@ -21,9 +25,31 @@ export async function POST(req) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     
+    let systemInstruction = "You are KrishiSmart AI, a personal agricultural assistant. You help farmers with crop diseases, soil health, best farming practices, and general agricultural advice. Keep your answers concise, practical, and helpful. Use a friendly and supportive tone. Format your answers using Markdown (bold, lists, etc.) for better readability.";
+
+    try {
+      const session = await getServerSession(authOptions);
+      if (session && session.user) {
+        await connectToDatabase();
+        const user = await User.findOne({ email: session.user.email });
+        if (user) {
+          let profileInfo = "\n\nUser Profile Context:\n";
+          if (user.location) profileInfo += `- Location: ${user.location}\n`;
+          if (user.farmSize) profileInfo += `- Farm Size: ${user.farmSize} acres\n`;
+          if (user.soilDetails) {
+            profileInfo += `- Soil Details: Nitrogen(N): ${user.soilDetails.nitrogen || 'Unknown'}, Phosphorous(P): ${user.soilDetails.phosphorous || 'Unknown'}, Potassium(K): ${user.soilDetails.potassium || 'Unknown'}, pH: ${user.soilDetails.ph || 'Unknown'}\n`;
+          }
+          profileInfo += "Use this information to provide highly accurate, personalized, and context-aware advice to the user.";
+          systemInstruction += profileInfo;
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching user profile for chat context:", err);
+    }
+
     const model = genAI.getGenerativeModel({ 
       model: "gemini-flash-latest",
-      systemInstruction: "You are KrishiSmart AI, a personal agricultural assistant. You help farmers with crop diseases, soil health, best farming practices, and general agricultural advice. Keep your answers concise, practical, and helpful. Use a friendly and supportive tone. Format your answers using Markdown (bold, lists, etc.) for better readability.",
+      systemInstruction: systemInstruction,
     });
 
     // Prepare history

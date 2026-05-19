@@ -5,7 +5,7 @@ import Head from "next/head";
 import Navbar from "../../components/Navbar";
 
 export default function Weather() {
-  const [location, setLocation] = useState("Punjab, India");
+  const [location, setLocation] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [weatherData, setWeatherData] = useState(null);
@@ -52,11 +52,13 @@ export default function Weather() {
           if (data.user && data.user.location) {
             setLocation(data.user.location);
             setProfileLocation(data.user.location);
+            return;
           }
         }
       } catch (error) {
         console.error("Error fetching location:", error);
       }
+      setLocation("Punjab, India"); // Fallback if no MongoDB location found
     }
     fetchUserLocation();
   }, []);
@@ -67,11 +69,11 @@ export default function Weather() {
     }
   };
 
-  // Fetch real weather data when location changes
+  // Fetch real weather data when location changes and refresh every 1 minute
   useEffect(() => {
-    async function fetchWeather() {
+    async function fetchWeather(isBackground = false) {
       if (!location) return;
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       try {
         const res = await fetch(`/api/weather?location=${encodeURIComponent(location)}`);
         const data = await res.json();
@@ -85,33 +87,24 @@ export default function Weather() {
       } catch (err) {
         setError("Failed to load weather data");
       } finally {
-        setLoading(false);
+        if (!isBackground) setLoading(false);
       }
     }
+    
     fetchWeather();
+
+    const intervalId = setInterval(() => {
+      fetchWeather(true); // Background fetch
+    }, 60000); // 1 minute
+
+    return () => clearInterval(intervalId);
   }, [location]);
 
-  const handleSearch = async (locName) => {
-    setSearching(true);
+  const handleSearch = (locName) => {
+    if (!locName.trim()) return;
     setSuggestions([]);
-    try {
-      const weatherRes = await fetch(`/api/weather?location=${encodeURIComponent(locName)}`);
-      const weatherData = await weatherRes.json();
-
-      if (weatherData.error) {
-        alert("Location not found. Please try again.");
-        return;
-      }
-
-      const newLoc = `${weatherData.location.name}, ${weatherData.location.region || weatherData.location.country}`;
-      setLocation(newLoc);
-      setWeatherData(weatherData);
-      setSearchQuery("");
-    } catch (err) {
-      console.error("Search error:", err);
-    } finally {
-      setSearching(false);
-    }
+    setLocation(locName);
+    setSearchQuery("");
   };
 
   const saveAsDefault = async () => {
@@ -181,6 +174,11 @@ export default function Weather() {
                 type="text" 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSearch(searchQuery);
+                  }
+                }}
                 placeholder="Search city/location..." 
                 className="w-full pl-12 pr-4 py-3.5 rounded-2xl border border-slate-200 bg-white focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all outline-none font-bold shadow-sm text-sm"
               />
@@ -211,7 +209,9 @@ export default function Weather() {
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-slate-700 truncate max-w-[150px]">{location}</span>
+                  <span className="font-bold text-slate-700 truncate max-w-[150px]">
+                    {weatherData?.location ? `${weatherData.location.name}, ${weatherData.location.region || weatherData.location.country}` : location}
+                  </span>
                   <button 
                     onClick={() => {
                       navigator.clipboard.writeText(location);
@@ -267,7 +267,9 @@ export default function Weather() {
                     <span className="text-8xl font-black leading-none drop-shadow-2xl">{Math.round(current?.temp_c)}°</span>
                     <div className="flex flex-col">
                        <span className="text-2xl font-bold text-blue-200 uppercase tracking-widest">{current?.condition?.text}</span>
-                       <span className="text-sm font-bold opacity-90">{location}</span>
+                       <span className="text-sm font-bold opacity-90">
+                         {weatherData?.location ? `${weatherData.location.name}, ${weatherData.location.region || weatherData.location.country}` : location}
+                       </span>
                     </div>
                   </div>
                   <div className="mt-4 flex gap-3">
@@ -341,36 +343,7 @@ export default function Weather() {
               ))}
             </div>
 
-            {/* Agircultural Advisory */}
-            <div className="bg-slate-900 rounded-[3rem] p-12 text-white relative overflow-hidden shadow-2xl">
-               <div className="absolute inset-0 opacity-20">
-                 <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_30%_20%,#10b981_0%,transparent_50%)]"></div>
-               </div>
-               <div className="relative z-10 flex flex-col lg:flex-row items-center gap-12">
-                 <div className="lg:w-2/3">
-                    <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-black uppercase tracking-widest mb-6">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      KrishiSmart AI Advisory
-                    </div>
-                    <h2 className="text-4xl font-black mb-6 leading-tight">Crop Health Insight</h2>
-                    <p className="text-slate-300 text-lg leading-relaxed mb-10">
-                      With a humidity level of <strong>{current?.humidity}%</strong> and upcoming {forecast?.[0]?.day?.daily_chance_of_rain}% chance of rain, your fields are currently in a 
-                      <span className="text-white font-bold"> {current?.temp_c > 30 ? 'High Heat Stress' : current?.temp_c < 15 ? 'Cool Growth' : 'Optimal'} zone</span>. 
-                      We recommend {current?.humidity > 70 ? 'monitoring for fungal growth' : 'maintaining standard irrigation'} for the next 48 hours.
-                    </p>
-                    <div className="flex flex-wrap gap-4">
-                       <button className="bg-emerald-600 hover:bg-emerald-500 text-white font-black px-10 py-4 rounded-2xl transition-all shadow-xl shadow-emerald-950/40 active:scale-95 text-sm uppercase tracking-widest">Generate Analysis</button>
-                       <button className="bg-white/5 hover:bg-white/10 text-white font-black px-10 py-4 rounded-2xl border border-white/10 transition-all active:scale-95 text-sm uppercase tracking-widest">Alert Settings</button>
-                    </div>
-                 </div>
-                 <div className="lg:w-1/3 flex justify-center">
-                    <div className="w-64 h-64 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center p-8 backdrop-blur-3xl relative">
-                       <div className="absolute inset-0 bg-emerald-500 blur-3xl opacity-20 animate-pulse"></div>
-                       <span className="text-9xl relative z-10">🚜</span>
-                    </div>
-                 </div>
-               </div>
-            </div>
+
           </>
         )}
       </main>
